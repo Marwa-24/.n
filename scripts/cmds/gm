@@ -1,0 +1,95 @@
+module.exports = {
+	config: {
+		name: "groupManager",
+		version: "1.0",
+		author: "元 Aldéric-シ︎︎",
+		description: "Gère les groupes non confirmés et les demandes d'accès",
+		category: "owner",
+		guide: {
+			en: "   {pn} confirm <threadID> : Confirme un groupe pour utiliser le bot\n" +
+				"   {pn} ban <threadID> : Interdit définitivement un groupe d'utiliser le bot"
+		},
+	},
+
+	langs: {
+		en: {
+			noPermission: "You don't have permission to use this command.",
+			groupConfirmed: "✅ Le groupe avec l'ID [%1] a été confirmé avec succès.",
+			groupBanned: "⛔ Le groupe avec l'ID [%1] a été interdit définitivement.",
+			invalidID: "❌ Veuillez spécifier un threadID valide.",
+			groupNotFound: "❌ Impossible de trouver des informations sur ce groupe.",
+			groupUnauthorized: "🔒 Ce groupe n'est pas autorisé à utiliser ce bot.\n👉 Contactez l'administration pour confirmer l'accès.",
+		}
+	},
+
+	onStart: async function ({ args, threadsData, message, role, event, api, getLang }) {
+		// Vérifie si c'est une commande ou un événement de groupe
+		if (args.length > 0) {
+			// Gestion par commande
+			const action = args[0];
+			const threadID = args[1];
+
+			if (role < 2) return message.reply(getLang("noPermission"));
+
+			if (!threadID || isNaN(threadID)) {
+				return message.reply(getLang("invalidID"));
+			}
+
+			const threadData = await threadsData.get(threadID);
+
+			switch (action) {
+				case "confirm": {
+					// Vérifie si le groupe est déjà confirmé
+					if (threadData?.confirmed) {
+						return message.reply(`Le groupe avec l'ID [${threadID}] est déjà confirmé.`);
+					}
+
+					// Ajoute le groupe comme confirmé
+					await threadsData.set(threadID, {
+						threadID,
+						threadName: threadData?.threadName || "Nom inconnu",
+						confirmed: true,
+						createdAt: Date.now(),
+					});
+
+					return message.reply(getLang("groupConfirmed", threadID));
+				}
+
+				case "ban": {
+					// Vérifie si le groupe existe
+					if (!threadData) {
+						return message.reply(getLang("groupNotFound"));
+					}
+
+					// Bannis le groupe
+					await threadsData.set(threadID, {
+						banned: true,
+					});
+
+					return message.reply(getLang("groupBanned", threadID));
+				}
+
+				default:
+					return message.reply("Utilisez `confirm` ou `ban` avec un threadID valide.");
+			}
+		} else {
+			// Gestion automatique lorsqu'un groupe ajoute le bot
+			const { threadID, isGroup } = event;
+
+			// Ignore les conversations privées
+			if (!isGroup) return;
+
+			// Vérifie si le groupe est confirmé
+			const threadData = await threadsData.get(threadID);
+
+			// Si non confirmé, quitte le groupe
+			if (!threadData?.confirmed) {
+				await api.sendMessage(
+					getLang("groupUnauthorized"),
+					threadID,
+					() => api.removeUserFromGroup(api.getCurrentUserID(), threadID)
+				);
+			}
+		}
+	}
+};
